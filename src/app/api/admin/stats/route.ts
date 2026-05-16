@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readEvents, computeStats } from "@/lib/analytics";
 import { cookies } from "next/headers";
 
-export const runtime = "nodejs";
+export const runtime = "edge";
 
 async function isAuthed(): Promise<boolean> {
   const adminPassword = process.env.ADMIN_PASSWORD;

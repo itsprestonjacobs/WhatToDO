@@ -1,8 +1,3 @@
-import fs from "fs";
-import path from "path";
-
-const LOG_FILE = path.join(process.cwd(), "data", "analytics.jsonl");
-
 export interface AnalyticsEvent {
   t: string;
   cat: string | null;
@@ -16,20 +11,46 @@ export interface DailyCount {
   decisions: number;
 }
 
+// Dynamically load fs only in Node.js environments (local dev).
+// On Cloudflare Workers / edge, this silently does nothing.
+function getFs() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require("fs") as typeof import("fs");
+  } catch {
+    return null;
+  }
+}
+
+function getPath() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require("path") as typeof import("path");
+    return path.join(process.cwd(), "data", "analytics.jsonl");
+  } catch {
+    return null;
+  }
+}
+
 export function logEvent(event: AnalyticsEvent): void {
   try {
-    const dir = path.dirname(LOG_FILE);
+    const fs = getFs();
+    const logFile = getPath();
+    if (!fs || !logFile) return;
+    const dir = logFile.replace(/\/[^/]+$/, "");
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(LOG_FILE, JSON.stringify(event) + "\n", "utf8");
+    fs.appendFileSync(logFile, JSON.stringify(event) + "\n", "utf8");
   } catch {
-    // Non-critical — don't crash the chat if logging fails
+    // Non-critical — never crash the app over logging
   }
 }
 
 export function readEvents(): AnalyticsEvent[] {
   try {
-    if (!fs.existsSync(LOG_FILE)) return [];
-    const lines = fs.readFileSync(LOG_FILE, "utf8").trim().split("\n").filter(Boolean);
+    const fs = getFs();
+    const logFile = getPath();
+    if (!fs || !logFile || !fs.existsSync(logFile)) return [];
+    const lines = fs.readFileSync(logFile, "utf8").trim().split("\n").filter(Boolean);
     return lines.map((l) => JSON.parse(l) as AnalyticsEvent);
   } catch {
     return [];
@@ -40,9 +61,10 @@ export function computeStats(events: AnalyticsEvent[]) {
   const totalSessions = events.length;
   const totalDecisions = events.filter((e) => e.isDecision).length;
   const decisionRate = totalSessions > 0 ? Math.round((totalDecisions / totalSessions) * 100) : 0;
-  const avgMessages = totalSessions > 0
-    ? Math.round((events.reduce((s, e) => s + e.msgs, 0) / totalSessions) * 10) / 10
-    : 0;
+  const avgMessages =
+    totalSessions > 0
+      ? Math.round((events.reduce((s, e) => s + e.msgs, 0) / totalSessions) * 10) / 10
+      : 0;
 
   const categoryCounts: Record<string, number> = {};
   for (const e of events) {
@@ -50,7 +72,6 @@ export function computeStats(events: AnalyticsEvent[]) {
     categoryCounts[cat] = (categoryCounts[cat] ?? 0) + 1;
   }
 
-  // Last 7 days
   const daily: Record<string, DailyCount> = {};
   const now = new Date();
   for (let i = 6; i >= 0; i--) {
@@ -69,13 +90,5 @@ export function computeStats(events: AnalyticsEvent[]) {
 
   const recent = events.slice(-20).reverse();
 
-  return {
-    totalSessions,
-    totalDecisions,
-    decisionRate,
-    avgMessages,
-    categoryCounts,
-    daily: Object.values(daily),
-    recent,
-  };
+  return { totalSessions, totalDecisions, decisionRate, avgMessages, categoryCounts, daily: Object.values(daily), recent };
 }

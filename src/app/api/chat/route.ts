@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { groq, MODEL, buildSystemPrompt } from "@/lib/ai";
 import { logEvent } from "@/lib/analytics";
 
-export const runtime = "nodejs";
+export const runtime = "edge";
 
 interface ChatMessage {
   role: "user" | "assistant";
